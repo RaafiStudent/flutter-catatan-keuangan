@@ -3,52 +3,71 @@ import '../database/database_helper.dart';
 import '../models/transaction_model.dart';
 
 class TransactionProvider with ChangeNotifier {
-  List<TransactionModel> _allTransactions = []; // Menyimpan SEMUA data
-  String _filterStatus = 'Bulan Ini'; // Default filter saat pertama buka
+  List<TransactionModel> _allTransactions = [];
 
-  // Getter data yang sudah difilter untuk ditampilkan di UI
+  // Filter Waktu Default: Bulan Ini
+  String _filterTime = 'Bulan Ini';
+  
+  // Filter Tipe Default: Semua (Bisa diganti ke 'Pemasukan' atau 'Pengeluaran')
+  String _filterType = 'Semua';
+
+  // --- GETTER DATA UTAMA (List yang tampil di layar) ---
   List<TransactionModel> get transactions {
     DateTime now = DateTime.now();
+    List<TransactionModel> tempResult = [];
 
-    if (_filterStatus == 'Hari Ini') {
-      return _allTransactions.where((item) {
+    // 1. FILTER WAKTU (Time Frame)
+    if (_filterTime == 'Hari Ini') {
+      tempResult = _allTransactions.where((item) {
         DateTime date = DateTime.parse(item.date);
         return date.day == now.day && date.month == now.month && date.year == now.year;
       }).toList();
-    } 
-    else if (_filterStatus == 'Minggu Ini') {
-      // Logika: 7 Hari Terakhir
+    } else if (_filterTime == 'Minggu Ini') {
       DateTime weekAgo = now.subtract(const Duration(days: 7));
-      return _allTransactions.where((item) {
+      tempResult = _allTransactions.where((item) {
         DateTime date = DateTime.parse(item.date);
         return date.isAfter(weekAgo) && date.isBefore(now.add(const Duration(days: 1)));
       }).toList();
-    } 
-    else if (_filterStatus == 'Bulan Ini') {
-      return _allTransactions.where((item) {
+    } else if (_filterTime == 'Bulan Ini') {
+      tempResult = _allTransactions.where((item) {
         DateTime date = DateTime.parse(item.date);
         return date.month == now.month && date.year == now.year;
       }).toList();
-    } 
-    else if (_filterStatus == 'Tahun Ini') {
-      return _allTransactions.where((item) {
+    } else if (_filterTime == 'Tahun Ini') {
+      tempResult = _allTransactions.where((item) {
         DateTime date = DateTime.parse(item.date);
         return date.year == now.year;
       }).toList();
+    } else {
+      tempResult = _allTransactions; // Semua Waktu
     }
 
-    return _allTransactions; // Kalau 'Semua'
+    // 2. FILTER TIPE (Income vs Expense)
+    // Ini logika agar list bisa dipisah sesuai permintaan Boss
+    if (_filterType == 'Pemasukan') {
+      return tempResult.where((item) => item.type == 'pemasukan').toList();
+    } else if (_filterType == 'Pengeluaran') {
+      return tempResult.where((item) => item.type == 'pengeluaran').toList();
+    }
+
+    return tempResult; // Tampilkan Semua (Campur)
   }
 
-  // Fungsi untuk mengubah jenis filter dari UI
-  void setFilter(String filter) {
-    _filterStatus = filter;
-    notifyListeners(); // Kabari UI untuk refresh tampilan
+  // --- Setter untuk Mengubah Filter ---
+  void setFilterTime(String filter) {
+    _filterTime = filter;
+    notifyListeners();
   }
 
-  String get filterStatus => _filterStatus;
+  void setFilterType(String type) {
+    _filterType = type;
+    notifyListeners();
+  }
 
-  // --- DATABASE OPERATIONS ---
+  String get filterTime => _filterTime;
+  String get filterType => _filterType;
+
+  // --- DATABASE CRUD ---
 
   Future<void> fetchTransactions() async {
     _allTransactions = await DatabaseHelper.instance.readAllTransactions();
@@ -66,29 +85,69 @@ class TransactionProvider with ChangeNotifier {
     await fetchTransactions();
   }
 
+  // FITUR UPDATE (EDIT DATA) - Request Boss
+  Future<void> updateTransaction(int id, String title, int amount, String date, String type) async {
+    final updatedTransaction = TransactionModel(
+      id: id,
+      title: title,
+      amount: amount,
+      date: date,
+      type: type,
+    );
+    await DatabaseHelper.instance.update(updatedTransaction);
+    await fetchTransactions();
+  }
+
   Future<void> deleteTransaction(int id) async {
     await DatabaseHelper.instance.delete(id);
     await fetchTransactions();
   }
 
-  // --- LOGIKA TOTAL (Dihitung dari data yang SUDAH DI-FILTER) ---
+  // --- LOGIKA TOTAL PINTAR ---
+  // Total dihitung berdasarkan Filter WAKTU saja, mengabaikan Filter TIPE.
+  // Kenapa? Agar saat Boss melihat list "Pengeluaran", tulisan "Sisa Saldo" di atas tidak jadi Nol/Aneh.
+  
+  List<TransactionModel> get _transactionsByTimeOnly {
+     DateTime now = DateTime.now();
+     if (_filterTime == 'Hari Ini') {
+        return _allTransactions.where((item) {
+          DateTime date = DateTime.parse(item.date);
+          return date.day == now.day && date.month == now.month && date.year == now.year;
+        }).toList();
+     } else if (_filterTime == 'Minggu Ini') {
+        DateTime weekAgo = now.subtract(const Duration(days: 7));
+        return _allTransactions.where((item) {
+          DateTime date = DateTime.parse(item.date);
+          return date.isAfter(weekAgo) && date.isBefore(now.add(const Duration(days: 1)));
+        }).toList();
+     } else if (_filterTime == 'Bulan Ini') {
+        return _allTransactions.where((item) {
+          DateTime date = DateTime.parse(item.date);
+          return date.month == now.month && date.year == now.year;
+        }).toList();
+     } else if (_filterTime == 'Tahun Ini') {
+        return _allTransactions.where((item) {
+          DateTime date = DateTime.parse(item.date);
+          return date.year == now.year;
+        }).toList();
+     }
+     return _allTransactions;
+  }
 
   int get totalPemasukan {
+    var list = _transactionsByTimeOnly; 
     var total = 0;
-    for (var item in transactions) { // Menggunakan 'transactions' (yang sudah difilter)
-      if (item.type == 'pemasukan') {
-        total += item.amount;
-      }
+    for (var item in list) { 
+      if (item.type == 'pemasukan') total += item.amount;
     }
     return total;
   }
 
   int get totalPengeluaran {
+    var list = _transactionsByTimeOnly;
     var total = 0;
-    for (var item in transactions) { // Menggunakan 'transactions' (yang sudah difilter)
-      if (item.type == 'pengeluaran') {
-        total += item.amount;
-      }
+    for (var item in list) { 
+      if (item.type == 'pengeluaran') total += item.amount;
     }
     return total;
   }
