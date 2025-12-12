@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import './providers/transaction_provider.dart';
+import './screens/home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,22 +19,20 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        // Mendaftarkan Provider Transaksi di sini
+        // Mendaftarkan Provider Transaksi di sini agar bisa diakses semua layar
         ChangeNotifierProvider(create: (_) => TransactionProvider()),
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'Catatan Keuangan',
         theme: ThemeData(
+          // Mengatur tema warna aplikasi menjadi Biru
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
           useMaterial3: true,
+          // Mengatur font default atau gaya teks jika diperlukan di masa depan
         ),
-        // Kita akan buat HomeScreen nanti, sementara pakai Placeholder dulu
-        home: const Scaffold(
-          body: Center(
-            child: Text("Database & Provider Siap!"),
-          ),
-        ),
+        // Menjadikan HomeScreen sebagai halaman pertama yang muncul
+        home: const HomeScreen(),
       ),
     );
   }
