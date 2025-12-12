@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // Import ini untuk Formatter Input
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../providers/transaction_provider.dart';
 import '../models/transaction_model.dart';
 
 class AddTransactionScreen extends StatefulWidget {
-  // Menerima data jika ini adalah proses EDIT
   final TransactionModel? transactionToEdit;
 
   const AddTransactionScreen({super.key, this.transactionToEdit});
@@ -18,26 +18,28 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   final _titleController = TextEditingController();
   final _amountController = TextEditingController();
   String _selectedType = 'pemasukan';
-  DateTime _selectedDate = DateTime.now(); // Tanggal & Jam saat ini (WIB otomatis dari HP)
-  TimeOfDay _selectedTime = TimeOfDay.now(); // Jam saat ini
+  DateTime _selectedDate = DateTime.now();
+  TimeOfDay _selectedTime = TimeOfDay.now();
 
   @override
   void initState() {
     super.initState();
-    // LOGIKA PINTAR: Cek apakah ini Edit? Jika ya, isi form dengan data lama
+    // LOGIKA PINTAR: Cek apakah ini Edit?
     if (widget.transactionToEdit != null) {
       _titleController.text = widget.transactionToEdit!.title;
-      _amountController.text = widget.transactionToEdit!.amount.toString();
+      
+      // FORMAT DUIT (Biar pas Edit, angkanya ada titiknya. Contoh: 15.000)
+      final formattedAmount = NumberFormat.decimalPattern('id_ID').format(widget.transactionToEdit!.amount);
+      _amountController.text = formattedAmount;
+      
       _selectedType = widget.transactionToEdit!.type;
       
-      // Ambil Tanggal & Jam dari Database
       DateTime dbDate = DateTime.parse(widget.transactionToEdit!.date);
       _selectedDate = dbDate;
       _selectedTime = TimeOfDay(hour: dbDate.hour, minute: dbDate.minute);
     }
   }
 
-  // Pilih Tanggal
   void _presentDatePicker() {
     showDatePicker(
       context: context,
@@ -47,7 +49,6 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     ).then((pickedDate) {
       if (pickedDate == null) return;
       setState(() {
-        // Gabungkan tanggal baru dengan jam yang sudah dipilih
         _selectedDate = DateTime(
           pickedDate.year, pickedDate.month, pickedDate.day,
           _selectedTime.hour, _selectedTime.minute
@@ -56,7 +57,6 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     });
   }
 
-  // Pilih Jam (WIB)
   void _presentTimePicker() {
     showTimePicker(
       context: context,
@@ -65,7 +65,6 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       if (pickedTime == null) return;
       setState(() {
         _selectedTime = pickedTime;
-        // Update jam di variabel _selectedDate
         _selectedDate = DateTime(
           _selectedDate.year, _selectedDate.month, _selectedDate.day,
           pickedTime.hour, pickedTime.minute,
@@ -77,11 +76,14 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   void _submitData() {
     if (_titleController.text.isEmpty || _amountController.text.isEmpty) return;
 
+    // BERSIHKAN TITIK SEBELUM DISIMPAN
+    // Karena "10.000" itu String, Database butuh Integer (10000)
+    final cleanAmountString = _amountController.text.replaceAll('.', ''); 
+    final enteredAmount = int.parse(cleanAmountString);
+    
     final enteredTitle = _titleController.text;
-    final enteredAmount = int.parse(_amountController.text);
     final provider = Provider.of<TransactionProvider>(context, listen: false);
 
-    // Simpan Tanggal BESERTA Jamnya (toString menyimpan format lengkap yyyy-MM-dd HH:mm:ss)
     if (widget.transactionToEdit == null) {
       provider.addTransaction(
         enteredTitle, enteredAmount, _selectedDate.toString(), _selectedType,
@@ -110,38 +112,58 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
           children: [
             TextField(
               controller: _titleController,
-              decoration: const InputDecoration(labelText: 'Keterangan (Contoh: Beli Pulsa)'),
+              decoration: const InputDecoration(
+                labelText: 'Keterangan (Contoh: Beli Pulsa)',
+                border: OutlineInputBorder(),
+              ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 15),
+            
+            // --- INPUT DUIT ALA BANK (ADA TITIKNYA) ---
             TextField(
               controller: _amountController,
-              decoration: const InputDecoration(labelText: 'Nominal (Rp)'),
+              decoration: const InputDecoration(
+                labelText: 'Nominal',
+                prefixText: 'Rp ', // Ada tulisan Rp di depannya
+                border: OutlineInputBorder(),
+              ),
               keyboardType: TextInputType.number,
+              // Ini Bagian Ajaibnya:
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly, // Cuma boleh angka
+                CurrencyInputFormatter(), // Memanggil class formatter buatan kita di bawah
+              ],
             ),
             const SizedBox(height: 20),
             
-            // --- INPUT WAKTU PINTAR ---
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text("Waktu Transaksi:", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
-                      const SizedBox(height: 5),
-                      Text(
-                        // Format Tanggal + Jam (WIB)
-                        DateFormat('dd MMM yyyy, HH:mm', 'id_ID').format(_selectedDate),
-                        style: TextStyle(fontSize: 18, color: Colors.blue[900], fontWeight: FontWeight.bold),
-                      ),
-                    ],
+            // --- INPUT WAKTU ---
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey),
+                borderRadius: BorderRadius.circular(5)
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text("Waktu Transaksi:", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 12)),
+                        const SizedBox(height: 5),
+                        Text(
+                          DateFormat('dd MMM yyyy, HH:mm', 'id_ID').format(_selectedDate),
+                          style: TextStyle(fontSize: 16, color: Colors.blue[900], fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                IconButton(icon: const Icon(Icons.calendar_month), onPressed: _presentDatePicker, tooltip: "Ubah Tanggal"),
-                IconButton(icon: const Icon(Icons.access_time), onPressed: _presentTimePicker, tooltip: "Ubah Jam"),
-              ],
+                  IconButton(icon: const Icon(Icons.calendar_month, color: Colors.blue), onPressed: _presentDatePicker),
+                  IconButton(icon: const Icon(Icons.access_time, color: Colors.blue), onPressed: _presentTimePicker),
+                ],
+              ),
             ),
-            const Divider(height: 30),
+            const SizedBox(height: 20),
 
             // --- PILIHAN TIPE ---
             Row(
@@ -158,8 +180,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                 backgroundColor: Colors.blue[800],
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 15),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
-              child: Text(widget.transactionToEdit == null ? 'SIMPAN DATA' : 'UPDATE DATA'),
+              child: Text(widget.transactionToEdit == null ? 'SIMPAN DATA' : 'UPDATE DATA', style: const TextStyle(fontWeight: FontWeight.bold)),
             ),
           ],
         ),
@@ -167,25 +190,54 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     );
   }
 
-  // Widget tombol kustom biar rapi
   Widget _buildTypeButton(String type, String label, Color color) {
     final isSelected = _selectedType == type;
     return GestureDetector(
       onTap: () => setState(() => _selectedType = type),
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
-          color: isSelected ? color : Colors.grey[200],
+          color: isSelected ? color : Colors.white,
           borderRadius: BorderRadius.circular(8),
-          border: isSelected ? Border.all(color: color, width: 2) : null,
+          border: Border.all(color: isSelected ? color : Colors.grey[300]!, width: isSelected ? 0 : 1),
+          boxShadow: isSelected ? [BoxShadow(color: color.withOpacity(0.4), blurRadius: 8, offset: const Offset(0, 4))] : [],
         ),
         child: Center(
           child: Text(label, style: TextStyle(
-            color: isSelected ? Colors.white : Colors.black54, 
+            color: isSelected ? Colors.white : Colors.grey[600], 
             fontWeight: FontWeight.bold
           )),
         ),
       ),
+    );
+  }
+}
+
+// --- CLASS TAMBAHAN: FORMATTER MATA UANG (ALA BANK) ---
+// Class ini bertugas mencegat ketikan Boss, lalu memberi titik otomatis
+class CurrencyInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    // Kalau kosong, biarkan kosong
+    if (newValue.text.isEmpty) {
+      return newValue.copyWith(text: '');
+    }
+
+    // 1. Hapus semua karakter aneh (selain angka)
+    String newText = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+    
+    // 2. Ubah jadi angka integer
+    int value = int.parse(newText);
+    
+    // 3. Format jadi Ribuan (Indonesian Locale)
+    final formatter = NumberFormat.decimalPattern('id_ID');
+    String newString = formatter.format(value);
+
+    // 4. Kembalikan teks baru dengan kursor ada di paling kanan
+    return newValue.copyWith(
+      text: newString,
+      selection: TextSelection.collapsed(offset: newString.length),
     );
   }
 }
